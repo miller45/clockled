@@ -1,4 +1,4 @@
-
+//#define SOFTRTC
 
 /*
   dim_curve 'lookup table' to compensate for the nonlinearity of human vision.
@@ -32,6 +32,8 @@ const byte dim_curve[] = {
 
 #include "RTClib.h"
 
+#include <Wire.h>
+
 #include "sainsmartkeypad.h"
 
 #define ledPinR 3
@@ -43,7 +45,11 @@ const byte dim_curve[] = {
 
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
 SainsmartKeypad keypad(0);
+#ifdef SOFTRTC
 RTC_Millis rtc;
+#else 
+RTC_DS1307 rtc;
+#endif
 // 13,12,11 3,2,1,0
 
 byte ah = 07;
@@ -57,7 +63,7 @@ uint8_t key;
 int selectcount = 0;
 bool lightOn = false;
 
-byte brightness = 50;
+byte brightness = 0;
 #define maxbrightness 255
 int rgb_colors[3] = {255, 0, 0};
 int rgb_colors_final[3] = {0, 0, 0};
@@ -68,8 +74,16 @@ int sensorVal = 0;
 byte sMode = 0; //0 = bright, 1=color
 
 void setup() {
+  Serial.begin(38400);
+  Wire.begin();
+#if SOFTRTC  
   rtc.begin(DateTime(__DATE__, __TIME__));
-
+#else
+  rtc.begin();
+  if(rtc.isrunning()){
+    Serial.println("RTC IS RUNNING");
+  }  
+#endif    
   lcd.begin(16, 2);
   lcd.setCursor(0, 0);
   lcd.print("Init...");
@@ -86,9 +100,13 @@ void setup() {
 void loop() {
   long mill = millis();
   int m1000slc = mill % 1000;
+  int m5000slc = mill % 5000;
   if (m1000slc == 0) {
     CheckAlarm();
     DisplayTime();
+  }
+  if(m5000slc==0){
+     i2c_scan();
   }
   key = keypad.getKey_fastscroll();
 
@@ -111,7 +129,7 @@ void loop() {
         } else {
           CycleColorUp();
         }
-        value++;        
+        value++;
         DisplayParas();
         WriteColorsPwm();
         break;
@@ -136,9 +154,9 @@ void loop() {
       case SELECT_KEY:
         selectcount++;
         if (selectcount > 10) {
-          selectcount = 0;          
-          ExecSyncAlarmLeds();          
-       //   ToggleLightOn();       
+          selectcount = 0;
+          ExecSyncAlarmLeds();
+          //   ToggleLightOn();
           delay(1000);
         }
         break;
@@ -149,7 +167,7 @@ void loop() {
   }
 }
 
-void WriteColorsPwm() {  
+void WriteColorsPwm() {
 
   rgb_colors_final[0] = rgb_colors[0] / 255 * dim_curve[brightness];
   rgb_colors_final[1] = rgb_colors[1] / 255 * dim_curve[brightness];
@@ -218,21 +236,25 @@ void IncreaseBrightness() {
 }
 
 void CycleColorUp() {
+#ifdef altc
   if (sensorVal < 1023) {
     sensorVal++;
   }
-  /*
-    if (rgb_colors[0] > 0) {
+#else
+  if (rgb_colors[0] > 0) {
     rgb_colors[0] = 0;
     rgb_colors[1] = 255;
-    } else if (rgb_colors[1] > 0) {
+  } else if (rgb_colors[1] > 0) {
     rgb_colors[1] = 0;
     rgb_colors[2] = 255;
-    } else {
+  } else {
     rgb_colors[0] = 255;
     rgb_colors[1] = 0;
     rgb_colors[2] = 0;
-    }*/
+  }
+
+#endif
+
 }
 
 void  DecreaseBrightness() {
@@ -241,22 +263,24 @@ void  DecreaseBrightness() {
   }
 }
 void  CycleColorDown() {
+#ifdef altc
   if (sensorVal > 0) {
     sensorVal--;
   }
-  /*
-    if (rgb_colors[2] > 0) {
-      rgb_colors[2] = 0;
-      rgb_colors[1] = 255;
-    } else if (rgb_colors[1] > 0) {
-      rgb_colors[1] = 0;
-      rgb_colors[0] = 255;
-    } else {
-      rgb_colors[0] = 0;
-      rgb_colors[1] = 0;
-      rgb_colors[2] = 255;
-    }
-  */
+#else
+  if (rgb_colors[2] > 0) {
+    rgb_colors[2] = 0;
+    rgb_colors[1] = 255;
+  } else if (rgb_colors[1] > 0) {
+    rgb_colors[1] = 0;
+    rgb_colors[0] = 255;
+  } else {
+    rgb_colors[0] = 0;
+    rgb_colors[1] = 0;
+    rgb_colors[2] = 255;
+  }
+#endif
+
 }
 
 
@@ -296,8 +320,17 @@ void ExecSyncAlarmLeds() {
     lcd.print(i);
     lcd.print(" ");
     WriteColorsPwm();
-    delay(1000);
+    key = keypad.getKey_instant();
+    if (key != SELECT_KEY) {
+      delay(1000 * 2);
+    };
+
   }
+  if (key != SELECT_KEY) {
+    key = keypad.getKey_waitrelease();
+  }
+  lcd.setCursor(0, 1);
+  lcd.print("       ");
 }
 
 /*
@@ -419,5 +452,47 @@ void getRGB(int hue, int sat, int val, int colors[3]) {
 }
 
 
+
+void i2c_scan()
+{
+  byte error, address;
+  int nDevices;
+
+  Serial.println("Scanning...");
+
+  nDevices = 0;
+  for(address = 1; address < 127; address++ ) 
+  {
+    // The i2c_scanner uses the return value of
+    // the Write.endTransmisstion to see if
+    // a device did acknowledge to the address.
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+
+    if (error == 0)
+    {
+      Serial.print("I2C device found at address 0x");
+      if (address<16) 
+        Serial.print("0");
+      Serial.print(address,HEX);
+      Serial.println("  !");
+
+      nDevices++;
+    }
+    else if (error==4) 
+    {
+      Serial.print("Unknow error at address 0x");
+      if (address<16) 
+        Serial.print("0");
+      Serial.println(address,HEX);
+    }    
+  }
+  if (nDevices == 0)
+    Serial.println("No I2C devices found\n");
+  else
+    Serial.println("done\n");
+
+  //delay(5000);           // wait 5 seconds for next scan
+}
 
 
