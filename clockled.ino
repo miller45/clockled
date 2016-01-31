@@ -1,30 +1,19 @@
-//#define SOFTRTC
-
 /*
-  dim_curve 'lookup table' to compensate for the nonlinearity of human vision.
-  Used in the getRGB function on saturation and brightness to make 'dimming' look more natural.
-  Exponential function used to create values below :
-  x from 0 - 255 : y = round(pow( 2.0, x+64/40.0) - 1)
+ * Pins occp.
+2, 
+4, 5, 6, 7, 8, 9
+3, 10, 11
+11, 12, 13
+
+Timer0 Pin 5,6
+Timer1 Pin 9,10
+Timer2 Pin 3,11
 */
 
-const byte dim_curve[] = {
-  0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
-  3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,   4,
-  4,   4,   4,   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   6,   6,   6,
-  6,   6,   6,   6,   6,   7,   7,   7,   7,   7,   7,   7,   8,   8,   8,   8,
-  8,   8,   9,   9,   9,   9,   9,   9,   10,  10,  10,  10,  10,  11,  11,  11,
-  11,  11,  12,  12,  12,  12,  12,  13,  13,  13,  13,  14,  14,  14,  14,  15,
-  15,  15,  16,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19,  19,  20,
-  20,  20,  21,  21,  22,  22,  22,  23,  23,  24,  24,  25,  25,  25,  26,  26,
-  27,  27,  28,  28,  29,  29,  30,  30,  31,  32,  32,  33,  33,  34,  35,  35,
-  36,  36,  37,  38,  38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,
-  48,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,
-  63,  64,  65,  66,  68,  69,  70,  71,  73,  74,  75,  76,  78,  79,  81,  82,
-  83,  85,  86,  88,  90,  91,  93,  94,  96,  98,  99,  101, 103, 105, 107, 109,
-  110, 112, 114, 116, 118, 121, 123, 125, 127, 129, 132, 134, 136, 139, 141, 144,
-  146, 149, 151, 154, 157, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 190,
-  193, 196, 200, 203, 207, 211, 214, 218, 222, 226, 230, 234, 238, 242, 248, 255,
-};
+
+//#define SOFTRTC
+#define GISDIGITAL
+
 
 #include <LiquidCrystal.h>
 
@@ -34,11 +23,17 @@ const byte dim_curve[] = {
 
 #include <Wire.h>
 
+#include <IRremoteSlim.h>
+
 #include "sainsmartkeypad.h"
+
+#include "ledcodes.h"
 
 #define ledPinR 3
 #define ledPinG 10
 #define ledPinB 11
+
+#define irPin 12
 
 #define SMODE_BRIGHT 0
 #define SMODE_COLOR 1
@@ -47,13 +42,16 @@ LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
 SainsmartKeypad keypad(0);
 #ifdef SOFTRTC
 RTC_Millis rtc;
-#else 
+#else
 RTC_DS1307 rtc;
 #endif
-// 13,12,11 3,2,1,0
 
-byte ah = 07;
-byte am = 10;
+IRrecv irrecv(irPin);
+
+//  13,12,11 3,2
+
+byte ah = 06;
+byte am = 15;
 boolean alarmdone = false;
 boolean timer1Hit = false; // if timer has been triggered //will be reset at 00.00
 
@@ -68,6 +66,8 @@ byte brightness = 0;
 int rgb_colors[3] = {255, 0, 0};
 int rgb_colors_final[3] = {0, 0, 0};
 
+boolean masterLedsOn = false; //all leds on off
+
 int sensorVal = 0;
 
 
@@ -76,24 +76,25 @@ byte sMode = 0; //0 = bright, 1=color
 void setup() {
   Serial.begin(38400);
   Wire.begin();
-#if SOFTRTC  
+#if SOFTRTC
   rtc.begin(DateTime(__DATE__, __TIME__));
 #else
   rtc.begin();
-  if(rtc.isrunning()){
+  if (rtc.isrunning()) {
     Serial.println("RTC IS RUNNING");
-  }  
-#endif    
+  }
+#endif
   lcd.begin(16, 2);
   lcd.setCursor(0, 0);
   lcd.print("Init...");
-  pinMode(10, OUTPUT);
-  digitalWrite(10, LOW);
+
   pinMode(ledPinR, OUTPUT);
   pinMode(ledPinG, OUTPUT);
   pinMode(ledPinB, OUTPUT);
   pinMode(13, OUTPUT);
   digitalWrite(13, LOW);
+  irrecv.enableIRIn();  // Start the receiver
+  TIMER_ENABLE_PWM;
   WriteColorsPwm();
 }
 
@@ -105,8 +106,8 @@ void loop() {
     CheckAlarm();
     DisplayTime();
   }
-  if(m5000slc==0){
-     i2c_scan();
+  if (m5000slc == 0) {
+    // i2c_scan();
   }
   key = keypad.getKey_fastscroll();
 
@@ -163,21 +164,56 @@ void loop() {
     }
 
 
-    colorDemoFade();
+    //colorDemoFade();
   }
+
+  //IR Stuff
+
+  decode_results  results;        // Somewhere to store the results
+  if (irrecv.decode(&results)) {  // Grab an IR code
+    ProcessIRCode(&results);
+    irrecv.resume();              // Prepare for the next value
+  }
+
+
+}
+
+void WriteAllOff() {
+  analogWrite(ledPinR, 0 );
+  #ifdef GISDIGITAL
+  digitalWrite(ledPinG, LOW );
+  #else
+  analogWrite(ledPinG, 0 );
+  #endif    
+  analogWrite(ledPinB, 0 );
 }
 
 void WriteColorsPwm() {
 
-  rgb_colors_final[0] = rgb_colors[0] / 255 * dim_curve[brightness];
-  rgb_colors_final[1] = rgb_colors[1] / 255 * dim_curve[brightness];
-  rgb_colors_final[2] = rgb_colors[2] / 255 * dim_curve[brightness];
-  if ( rgb_colors_final[0] > 255 ) rgb_colors_final[0] = 255;
-  if ( rgb_colors_final[1] > 255 ) rgb_colors_final[1] = 255;
-  if ( rgb_colors_final[2] > 255 ) rgb_colors_final[2] = 255;
+  rgb_colors_final[0] = rgb_colors[0] / maxbrightness * dim_curve[brightness];
+  rgb_colors_final[1] = rgb_colors[1] / maxbrightness * dim_curve[brightness];
+  rgb_colors_final[2] = rgb_colors[2] / maxbrightness * dim_curve[brightness];
+  if ( rgb_colors_final[0] > maxbrightness ) rgb_colors_final[0] = maxbrightness;
+  if ( rgb_colors_final[1] > maxbrightness ) rgb_colors_final[1] = maxbrightness;
+  if ( rgb_colors_final[2] > maxbrightness ) rgb_colors_final[2] = maxbrightness;
   analogWrite(ledPinR, rgb_colors_final[0] );
+ // 
+  #ifdef GISDIGITAL
+  if(rgb_colors_final[1]>170){
+     digitalWrite(ledPinG,HIGH);
+  }else{
+     digitalWrite(ledPinG,LOW);
+  }
+  #else
   analogWrite(ledPinG, rgb_colors_final[1]);
+  #endif
   analogWrite(ledPinB, rgb_colors_final[2]);
+}
+
+void SetRGB(int R, int G, int B) {
+  rgb_colors[0] = R;
+  rgb_colors[1] = G;
+  rgb_colors[2] = B;
 }
 
 void DisplayTime() {
@@ -235,6 +271,18 @@ void IncreaseBrightness() {
   }
 }
 
+void IncreaseBrightnessD10() {
+  if (brightness+25 < maxbrightness) {
+    brightness+=25;
+  }
+}
+
+void EnsureMinBrightness(){
+  if(brightness==0){
+     brightness=25;
+  }
+}
+
 void CycleColorUp() {
 #ifdef altc
   if (sensorVal < 1023) {
@@ -262,6 +310,13 @@ void  DecreaseBrightness() {
     brightness--;
   }
 }
+
+void  DecreaseBrightnessD10() {
+  if (brightness-25 > 0) {
+    brightness-=25;
+  }
+}
+
 void  CycleColorDown() {
 #ifdef altc
   if (sensorVal > 0) {
@@ -322,10 +377,13 @@ void ExecSyncAlarmLeds() {
     WriteColorsPwm();
     key = keypad.getKey_instant();
     if (key != SELECT_KEY) {
-      delay(1000 * 2);
+      delay(100 * 2);
     };
 
   }
+  brightness=255;
+  SetRGB(255,255,255);
+  WriteColorsPwm();
   if (key != SELECT_KEY) {
     key = keypad.getKey_waitrelease();
   }
@@ -451,48 +509,48 @@ void getRGB(int hue, int sat, int val, int colors[3]) {
 
 }
 
-
-
-void i2c_scan()
+//
+void  ProcessIRCode (decode_results *results)
 {
-  byte error, address;
-  int nDevices;
-
-  Serial.println("Scanning...");
-
-  nDevices = 0;
-  for(address = 1; address < 127; address++ ) 
-  {
-    // The i2c_scanner uses the return value of
-    // the Write.endTransmisstion to see if
-    // a device did acknowledge to the address.
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
-
-    if (error == 0)
-    {
-      Serial.print("I2C device found at address 0x");
-      if (address<16) 
-        Serial.print("0");
-      Serial.print(address,HEX);
-      Serial.println("  !");
-
-      nDevices++;
+  if (results->decode_type == NEC) {
+    switch (results->value) {
+      case LE_OFF:
+        WriteAllOff();
+        break;
+      case LE_ON:
+        EnsureMinBrightness();
+        WriteColorsPwm();
+        break;
+      case LE_W:
+        SetRGB(255, 255, 255);
+        EnsureMinBrightness();
+        WriteColorsPwm();        
+        break;
+      case LE_R1:
+        SetRGB(255, 0, 0);
+        EnsureMinBrightness();
+        WriteColorsPwm();
+        break;
+      case LE_G1:
+        SetRGB(0, 255, 0);
+        EnsureMinBrightness();
+        WriteColorsPwm();
+        break;
+      case LE_B1:
+        SetRGB(0, 0, 255);
+        EnsureMinBrightness();
+        WriteColorsPwm();
+        break;
+      case LE_DIMMER:
+        DecreaseBrightnessD10();
+        WriteColorsPwm();
+        break;
+      case LE_BRIGHTER:
+        IncreaseBrightnessD10();
+        WriteColorsPwm();
+        break;
     }
-    else if (error==4) 
-    {
-      Serial.print("Unknow error at address 0x");
-      if (address<16) 
-        Serial.print("0");
-      Serial.println(address,HEX);
-    }    
   }
-  if (nDevices == 0)
-    Serial.println("No I2C devices found\n");
-  else
-    Serial.println("done\n");
-
-  //delay(5000);           // wait 5 seconds for next scan
 }
 
 
