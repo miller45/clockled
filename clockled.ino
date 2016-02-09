@@ -1,3 +1,4 @@
+#define GISDIGITAL
 /*
  * Pins occp.
 2, 
@@ -12,8 +13,6 @@ Timer2 Pin 3,11
 
 
 //#define SOFTRTC
-#define GISDIGITAL
-
 
 #include <LiquidCrystal.h>
 
@@ -29,7 +28,7 @@ Timer2 Pin 3,11
 
 #include "ledcodes.h"
 
-#define ledPinR 3
+#define ledPinR 5
 #define ledPinG 10
 #define ledPinB 11
 
@@ -37,8 +36,10 @@ Timer2 Pin 3,11
 
 #define SMODE_BRIGHT 0
 #define SMODE_COLOR 1
+#define SMODE_HOUR 2
+#define SMODE_MIN 3
 
-LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+LiquidCrystal lcd(8, 9, 4, 3, 6, 7);
 SainsmartKeypad keypad(0);
 #ifdef SOFTRTC
 RTC_Millis rtc;
@@ -51,7 +52,7 @@ IRrecv irrecv(irPin);
 //  13,12,11 3,2
 
 byte ah = 06;
-byte am = 15;
+byte am = 00;
 boolean alarmdone = false;
 boolean timer1Hit = false; // if timer has been triggered //will be reset at 00.00
 
@@ -61,9 +62,9 @@ uint8_t key;
 int selectcount = 0;
 bool lightOn = false;
 
-byte brightness = 0;
+byte brightness = 255;
 #define maxbrightness 255
-int rgb_colors[3] = {255, 0, 0};
+int rgb_colors[3] = {255, 255, 255};
 int rgb_colors_final[3] = {0, 0, 0};
 
 boolean masterLedsOn = false; //all leds on off
@@ -125,31 +126,33 @@ void loop() {
     switch (key)
     {
       case UP_KEY:
-        if (sMode == SMODE_BRIGHT) {
-          IncreaseBrightness();
-        } else {
-          CycleColorUp();
+        if (sMode == SMODE_HOUR) {
+          IncreaseHour();
+        } 
+        else 
+        if(sMode==SMODE_MIN){
+          IncreaseMin();
         }
-        value++;
-        DisplayParas();
-        WriteColorsPwm();
+        
+        DisplayTime();        
         break;
       case DOWN_KEY:
-        if (sMode == SMODE_BRIGHT) {
-          DecreaseBrightness();
-        } else {
-          CycleColorDown();
+        if (sMode == SMODE_HOUR) {
+          DecreaseHour();
+        } 
+        else 
+        if(sMode==SMODE_MIN){
+          DecreaseMin();
         }
-        value--;
-        DisplayParas();
-        WriteColorsPwm();
+        
+        DisplayTime();        
         break;
       case LEFT_KEY:
-        sMode = SMODE_BRIGHT;
+        sMode = SMODE_HOUR;
         DisplayParas();
         break;
       case RIGHT_KEY:
-        sMode = SMODE_COLOR;
+        sMode = SMODE_MIN;
         DisplayParas();
         break;
       case SELECT_KEY:
@@ -182,9 +185,9 @@ void WriteAllOff() {
   analogWrite(ledPinR, 0 );
   #ifdef GISDIGITAL
   digitalWrite(ledPinG, LOW );
-  #else
+  #else  
   analogWrite(ledPinG, 0 );
-  #endif    
+  #endif      
   analogWrite(ledPinB, 0 );
 }
 
@@ -196,8 +199,8 @@ void WriteColorsPwm() {
   if ( rgb_colors_final[0] > maxbrightness ) rgb_colors_final[0] = maxbrightness;
   if ( rgb_colors_final[1] > maxbrightness ) rgb_colors_final[1] = maxbrightness;
   if ( rgb_colors_final[2] > maxbrightness ) rgb_colors_final[2] = maxbrightness;
-  analogWrite(ledPinR, rgb_colors_final[0] );
- // 
+
+  analogWrite(ledPinR, rgb_colors_final[0]);   
   #ifdef GISDIGITAL
   if(rgb_colors_final[1]>170){
      digitalWrite(ledPinG,HIGH);
@@ -219,24 +222,19 @@ void SetRGB(int R, int G, int B) {
 void DisplayTime() {
   DateTime now = rtc.now();
   lcd.setCursor(0, 0);
-  if (now.hour() < 10) {
-    lcd.print(" ");
-  }
+  if (now.hour() < 10) lcd.print(" ");
   lcd.print(now.hour());
   lcd.print(":");
-  if (now.minute() < 10) {
-    lcd.print("0");
-  }
+  if (now.minute() < 10) lcd.print("0");
   lcd.print(now.minute());
   lcd.print(":");
-  if (now.second() < 10) {
-    lcd.print("0");
-  }
+  if (now.second() < 10) lcd.print("0");
   lcd.print(now.second());
-
   lcd.print(" A");
+  if(ah<10) lcd.print(" ");
   lcd.print(ah);
   lcd.print(":");
+  if(am<10) lcd.print("0");
   lcd.print(am);
 }
 
@@ -303,6 +301,42 @@ void CycleColorUp() {
 
 #endif
 
+}
+
+void IncreaseHour(){
+  alarmdone=false;
+  if (ah > 23) {
+    ah=0;
+  }else{
+    ah+=1;
+  }
+}
+
+void DecreaseHour(){
+  alarmdone=false;
+  if(ah<1){
+    ah=23;
+  }else{
+    ah-=1;
+  }
+}
+
+void IncreaseMin(){
+  alarmdone=false;
+  if (am > 58) {
+    am=0;
+  }else{
+    am+=1;
+  }
+}
+
+void DecreaseMin(){
+  alarmdone=false;
+  if(am<1){
+    am=59;
+  }else{
+    am-=1;
+  }
 }
 
 void  DecreaseBrightness() {
@@ -416,7 +450,7 @@ int fadeSpeed = 4; // 'speed' of fading
 
 int hue;
 int saturation;
-
+#ifdef nix
 void colorDemoFade()  {
 
   return;
@@ -508,7 +542,7 @@ void getRGB(int hue, int sat, int val, int colors[3]) {
   }
 
 }
-
+#endif
 //
 void  ProcessIRCode (decode_results *results)
 {
@@ -548,6 +582,9 @@ void  ProcessIRCode (decode_results *results)
       case LE_BRIGHTER:
         IncreaseBrightnessD10();
         WriteColorsPwm();
+        break;
+      case LE_FADE:
+        ExecSyncAlarmLeds();
         break;
     }
   }
