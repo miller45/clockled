@@ -1,14 +1,15 @@
 #define GISDIGITAL
+//#define XDEBUG
 /*
- * Pins occp.
-2, 
-4, 5, 6, 7, 8, 9
-3, 10, 11
-11, 12, 13
+   Pins occp.
+  2,
+  4, 5, 6, 7, 8, 9
+  3, 10, 11
+  11, 12, 13
 
-Timer0 Pin 5,6
-Timer1 Pin 9,10
-Timer2 Pin 3,11
+  Timer0 Pin 5,6
+  Timer1 Pin 9,10
+  Timer2 Pin 3,11
 */
 
 
@@ -51,8 +52,8 @@ IRrecv irrecv(irPin);
 
 //  13,12,11 3,2
 
-byte ah = 06;
-byte am = 00;
+byte ah = 07;
+byte am = 10;
 boolean alarmdone = false;
 boolean timer1Hit = false; // if timer has been triggered //will be reset at 00.00
 
@@ -64,8 +65,8 @@ bool lightOn = false;
 
 byte brightness = 255;
 #define maxbrightness 255
-int rgb_colors[3] = {255, 255, 255};
-int rgb_colors_final[3] = {0, 0, 0};
+uint16_t rgb_colors[3] = {51, 0, 255};
+uint16_t rgb_colors_final[3] = {0, 0, 0};
 
 boolean masterLedsOn = false; //all leds on off
 
@@ -75,6 +76,7 @@ int sensorVal = 0;
 byte sMode = 0; //0 = bright, 1=color
 
 void setup() {
+ // SoftPWMBegin();
   Serial.begin(38400);
   Wire.begin();
 #if SOFTRTC
@@ -83,6 +85,10 @@ void setup() {
   rtc.begin();
   if (rtc.isrunning()) {
     Serial.println("RTC IS RUNNING");
+    //rtc.adjust(DateTime(__DATE__, __TIME__));
+  } else {
+    Serial.println("RTC is NOT running! ");
+
   }
 #endif
   lcd.begin(16, 2);
@@ -128,24 +134,22 @@ void loop() {
       case UP_KEY:
         if (sMode == SMODE_HOUR) {
           IncreaseHour();
-        } 
-        else 
-        if(sMode==SMODE_MIN){
+        }
+        else if (sMode == SMODE_MIN) {
           IncreaseMin();
         }
-        
-        DisplayTime();        
+
+        DisplayTime();
         break;
       case DOWN_KEY:
         if (sMode == SMODE_HOUR) {
           DecreaseHour();
-        } 
-        else 
-        if(sMode==SMODE_MIN){
+        }
+        else if (sMode == SMODE_MIN) {
           DecreaseMin();
         }
-        
-        DisplayTime();        
+
+        DisplayTime();
         break;
       case LEFT_KEY:
         sMode = SMODE_HOUR;
@@ -183,34 +187,47 @@ void loop() {
 
 void WriteAllOff() {
   analogWrite(ledPinR, 0 );
-  #ifdef GISDIGITAL
+#ifdef GISDIGITAL
   digitalWrite(ledPinG, LOW );
-  #else  
+#else
   analogWrite(ledPinG, 0 );
-  #endif      
+#endif
   analogWrite(ledPinB, 0 );
 }
 
 void WriteColorsPwm() {
 
-  rgb_colors_final[0] = rgb_colors[0] / maxbrightness * dim_curve[brightness];
-  rgb_colors_final[1] = rgb_colors[1] / maxbrightness * dim_curve[brightness];
-  rgb_colors_final[2] = rgb_colors[2] / maxbrightness * dim_curve[brightness];
+  rgb_colors_final[0] = rgb_colors[0] * dim_curve[brightness] / maxbrightness;
+  rgb_colors_final[1] = rgb_colors[1] * dim_curve[brightness] / maxbrightness;
+  rgb_colors_final[2] = rgb_colors[2] * dim_curve[brightness] / maxbrightness;
+  //rgb_colors_final[0] = rgb_colors[0];
+  //rgb_colors_final[1] = rgb_colors[1];
+  //rgb_colors_final[2] = rgb_colors[2];
   if ( rgb_colors_final[0] > maxbrightness ) rgb_colors_final[0] = maxbrightness;
   if ( rgb_colors_final[1] > maxbrightness ) rgb_colors_final[1] = maxbrightness;
   if ( rgb_colors_final[2] > maxbrightness ) rgb_colors_final[2] = maxbrightness;
 
-  analogWrite(ledPinR, rgb_colors_final[0]);   
-  #ifdef GISDIGITAL
-  if(rgb_colors_final[1]>170){
-     digitalWrite(ledPinG,HIGH);
-  }else{
-     digitalWrite(ledPinG,LOW);
-  }
-  #else
+  analogWrite(ledPinR, rgb_colors_final[0]);
+#ifdef GISDIGITAL
+  //SoftPWMSet(ledPinG, rgb_colors_final[1]);
+    if(rgb_colors_final[1]>170){
+       digitalWrite(ledPinG,HIGH);
+    }else{
+       digitalWrite(ledPinG,LOW);
+    }
+#else
   analogWrite(ledPinG, rgb_colors_final[1]);
-  #endif
+#endif
   analogWrite(ledPinB, rgb_colors_final[2]);
+#ifdef XDEBUG
+  Serial.print("WriteColorsPWM ");
+  Serial.print(rgb_colors_final[0]);
+  Serial.print(" ");
+  Serial.print(rgb_colors_final[1]);
+  Serial.print(" ");
+  Serial.print(rgb_colors_final[2]);
+  Serial.println();
+#endif
 }
 
 void SetRGB(int R, int G, int B) {
@@ -231,10 +248,10 @@ void DisplayTime() {
   if (now.second() < 10) lcd.print("0");
   lcd.print(now.second());
   lcd.print(" A");
-  if(ah<10) lcd.print(" ");
+  if (ah < 10) lcd.print(" ");
   lcd.print(ah);
   lcd.print(":");
-  if(am<10) lcd.print("0");
+  if (am < 10) lcd.print("0");
   lcd.print(am);
 }
 
@@ -270,16 +287,26 @@ void IncreaseBrightness() {
 }
 
 void IncreaseBrightnessD10() {
-  if (brightness+25 < maxbrightness) {
-    brightness+=25;
+  if (brightness + 25 <= maxbrightness) {
+    brightness += 25;
   }
 }
 
-void EnsureMinBrightness(){
-  if(brightness==0){
-     brightness=25;
+void EnsureMinBrightness() {
+  if (brightness == 0) {
+    brightness = 25;
   }
 }
+
+
+//combination of three
+void SetRGBAndStuff(int R, int G, int B) {
+  SetRGB(R, G, B);
+  WriteColorsPwm();
+  EnsureMinBrightness();
+}
+
+
 
 void CycleColorUp() {
 #ifdef altc
@@ -303,39 +330,39 @@ void CycleColorUp() {
 
 }
 
-void IncreaseHour(){
-  alarmdone=false;
+void IncreaseHour() {
+  alarmdone = false;
   if (ah > 23) {
-    ah=0;
-  }else{
-    ah+=1;
+    ah = 0;
+  } else {
+    ah += 1;
   }
 }
 
-void DecreaseHour(){
-  alarmdone=false;
-  if(ah<1){
-    ah=23;
-  }else{
-    ah-=1;
+void DecreaseHour() {
+  alarmdone = false;
+  if (ah < 1) {
+    ah = 23;
+  } else {
+    ah -= 1;
   }
 }
 
-void IncreaseMin(){
-  alarmdone=false;
+void IncreaseMin() {
+  alarmdone = false;
   if (am > 58) {
-    am=0;
-  }else{
-    am+=1;
+    am = 0;
+  } else {
+    am += 1;
   }
 }
 
-void DecreaseMin(){
-  alarmdone=false;
-  if(am<1){
-    am=59;
-  }else{
-    am-=1;
+void DecreaseMin() {
+  alarmdone = false;
+  if (am < 1) {
+    am = 59;
+  } else {
+    am -= 1;
   }
 }
 
@@ -346,8 +373,8 @@ void  DecreaseBrightness() {
 }
 
 void  DecreaseBrightnessD10() {
-  if (brightness-25 > 0) {
-    brightness-=25;
+  if (brightness - 25 > 0) {
+    brightness -= 25;
   }
 }
 
@@ -411,12 +438,12 @@ void ExecSyncAlarmLeds() {
     WriteColorsPwm();
     key = keypad.getKey_instant();
     if (key != SELECT_KEY) {
-      delay(100 * 2);
+      delay(10 * 2);
     };
 
   }
-  brightness=255;
-  SetRGB(255,255,255);
+  brightness = 255;
+  SetRGB(255, 255, 255);
   WriteColorsPwm();
   if (key != SELECT_KEY) {
     key = keypad.getKey_waitrelease();
@@ -556,24 +583,16 @@ void  ProcessIRCode (decode_results *results)
         WriteColorsPwm();
         break;
       case LE_W:
-        SetRGB(255, 255, 255);
-        EnsureMinBrightness();
-        WriteColorsPwm();        
+        SetRGBAndStuff(255, 255, 255);
         break;
       case LE_R1:
-        SetRGB(255, 0, 0);
-        EnsureMinBrightness();
-        WriteColorsPwm();
+        SetRGBAndStuff(255, 0, 0);
         break;
       case LE_G1:
-        SetRGB(0, 255, 0);
-        EnsureMinBrightness();
-        WriteColorsPwm();
+        SetRGBAndStuff(0, 255, 0);
         break;
       case LE_B1:
-        SetRGB(0, 0, 255);
-        EnsureMinBrightness();
-        WriteColorsPwm();
+        SetRGBAndStuff(0, 0, 255);
         break;
       case LE_DIMMER:
         DecreaseBrightnessD10();
@@ -586,8 +605,43 @@ void  ProcessIRCode (decode_results *results)
       case LE_FADE:
         ExecSyncAlarmLeds();
         break;
+      case LE_R2:
+        SetRGBAndStuff(255, 51, 0);
+        break;
+      case LE_Y1:
+        SetRGBAndStuff(255, 127, 0);
+        break;
+      case LE_Y2:
+        SetRGBAndStuff(255, 204, 0);
+        break;
+      case LE_Y3:
+        SetRGBAndStuff(255, 255, 0);
+        break;
+      case LE_G2:
+        SetRGBAndStuff(255, 127, 0);
+        break;
+      case LE_C1:
+        SetRGBAndStuff(0, 255, 204);
+        break;
+      case LE_C2:
+        SetRGBAndStuff(0, 204, 255);
+        break;
+      case LE_C3:
+        SetRGBAndStuff(255, 127, 255);
+        break;
+      case LE_B2:
+        SetRGBAndStuff(51, 0, 255);
+        break;
+      case LE_V1:
+        SetRGBAndStuff(127, 0, 255);
+        break;
+      case LE_V2:
+        SetRGBAndStuff(204, 0, 255);
+        break;
+      case LE_V3:
+        SetRGBAndStuff(255, 0, 255);
+        break;
     }
   }
 }
-
 
