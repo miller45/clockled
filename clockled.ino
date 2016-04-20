@@ -34,12 +34,14 @@
 #define ledPinB 11
 
 #define irPin 12
+#define ALARM_PIN 2
 
 #define SMODE_BRIGHT 0
 #define SMODE_COLOR 1
 #define SMODE_HOUR 2
 #define SMODE_MIN 3
 
+//PINS used 3,4,5,6,7,8,9,10,11,12
 LiquidCrystal lcd(8, 9, 4, 3, 6, 7);
 SainsmartKeypad keypad(0);
 #ifdef SOFTRTC
@@ -76,6 +78,8 @@ int sensorVal = 0;
 byte sMode = 0; //0 = bright, 1=color
 
 void setup() {
+  pinMode(ALARM_PIN,OUTPUT);
+  digitalWrite(ALARM_PIN,LOW);
  // SoftPWMBegin();
   Serial.begin(38400);
   Wire.begin();
@@ -438,7 +442,7 @@ void ExecSyncAlarmLeds() {
     WriteColorsPwm();
     key = keypad.getKey_instant();
     if (key != SELECT_KEY) {
-      delay(10 * 2);
+      delay(100 * 2);
     };
 
   }
@@ -450,6 +454,16 @@ void ExecSyncAlarmLeds() {
   }
   lcd.setCursor(0, 1);
   lcd.print("       ");
+
+  AlarmSoundOn();
+}
+
+void AlarmSoundOn(){
+  digitalWrite(ALARM_PIN,HIGH);   
+}
+
+void AlarmSoundOff(){
+  digitalWrite(ALARM_PIN,LOW);   
 }
 
 /*
@@ -640,6 +654,9 @@ void  ProcessIRCode (decode_results *results)
         break;
       case LE_V3:
         SetRGBAndStuff(255, 0, 255);
+        break;
+      case LE_SMOOTH:
+        AlarmSoundOff();
         break;
     }
   }
